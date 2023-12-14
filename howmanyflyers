@@ -1,0 +1,56 @@
+library(tidyverse)
+library(readabs)
+library(stringr)
+library(janitor)
+
+#This is to get the count for number of flyers you need for each SA1 map area for local council letterboxing
+
+#First get the dwelling data from the ABS. You can get this from https://www.abs.gov.au/census/find-census-data/datapacks?release=2021&product=GCP&geography=SA1&header=S
+#you need to select 2021>general community proflie>statistical area one and then copy the link to your state
+
+# 1. Specify the URL of the ZIP file
+census_zip_wa <- "https://www.abs.gov.au/census/find-census-data/datapacks/download/2021_GCP_SA1_for_WA_short-header.zip"
+
+# 2. Choose a destination directory (you can change this), I made a folder called "data" in the project working drive
+destination_dir <- "data"
+
+# 3. Download the ZIP file to the destination directory
+download.file(census_zip_wa, destfile = paste0(destination_dir, "census_data_wa.zip"), method = "auto")
+
+# 4. Unzip the downloaded file
+unzip(paste0(destination_dir, "census_data_wa.zip"), exdir = destination_dir)
+
+# 5: Read and clean the dwelling data which is 2021Census_G34_WA_SA1.csv
+# Load the CSV file and clean column names (the misspelled dwellings is an ABS mistake not me!)
+
+dwellings <- read_csv("data/2021 Census GCP Statistical Area 1 for WA/2021Census_G34_WA_SA1.csv") %>% clean_names() 
+
+dwellings <- dwellings %>%
+  select(sa1_code_2021,
+         total_dwelings) %>% 
+  mutate(sa1 = str_replace(sa1_code_2021,"(.{1}).{4}(.{4})", "\\1\\2")) 
+
+
+#6. then get the SA1 codes by local government area. For WA you can use WAEC data
+library(readxl)
+url <- "https://www.elections.wa.gov.au/sites/default/files/Enrolment%20Statistics%20by%20SA1%20-%20230331%20(LG).xlsx"
+destfile <- "enrolment_lga_wa_march_2023.xlsx"
+curl::curl_download(url, destfile)
+enrolment_lga_wa_march_2023 <- read_excel(destfile,
+range = "A2:F7443") %>% janitor::clean_names()
+View(enrolment_lga_wa_march_2023) 
+
+#7. find  your local council from the  wa_councils df and see  how many SA1s you have
+
+wa_councils<- fct_count(enrolment_lga_wa_march_2023$local_government_sort_name)
+View(wa_lgas)
+
+#8 filter to your area and then join it up. All done!
+
+
+vic_park <- enrolment_lga_wa_march_2023 %>% 
+  filter(local_government_sort_name == "Victoria Park") %>% 
+  mutate(sa1 = as.character(sa1))
+
+letterboxing <- left_join(vic_park, dwellings, by = "sa1") %>% 
+  write_csv("letterboxing_vic_park.csv")
